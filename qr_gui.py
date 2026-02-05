@@ -15,7 +15,7 @@ class QRGeneratorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("QR Code Generator")
-        self.root.geometry("500x600")
+        self.root.geometry("600x800")
         self.root.resizable(True, True)
 
         self.current_qr_image = None
@@ -93,17 +93,29 @@ class QRGeneratorApp:
         preview_label = ttk.Label(main_frame, text="Preview:")
         preview_label.pack(anchor=tk.W, pady=(20, 5))
 
-        # Canvas for QR code display with border
+        # Canvas for QR code display with border and scrollbars
         self.canvas_frame = ttk.Frame(main_frame, relief="sunken", borderwidth=2)
-        self.canvas_frame.pack(pady=10)
+        self.canvas_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
 
         self.qr_canvas = tk.Canvas(
             self.canvas_frame,
-            width=300,
-            height=300,
             bg="white"
         )
-        self.qr_canvas.pack()
+
+        canvas_vscroll = ttk.Scrollbar(
+            self.canvas_frame, orient=tk.VERTICAL, command=self.qr_canvas.yview
+        )
+        canvas_hscroll = ttk.Scrollbar(
+            self.canvas_frame, orient=tk.HORIZONTAL, command=self.qr_canvas.xview
+        )
+        self.qr_canvas.configure(
+            yscrollcommand=canvas_vscroll.set,
+            xscrollcommand=canvas_hscroll.set
+        )
+
+        canvas_hscroll.pack(side=tk.BOTTOM, fill=tk.X)
+        canvas_vscroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.qr_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Status label
         self.status_var = tk.StringVar(value="Enter text and click 'Generate QR Code'")
@@ -112,10 +124,14 @@ class QRGeneratorApp:
             textvariable=self.status_var,
             font=("Segoe UI", 9)
         )
-        self.status_label.pack(pady=10)
+        self.status_label.pack(pady=(5, 0))
 
         # Bind Enter key to generate
         self.root.bind('<Control-Return>', lambda e: self.generate_qr())
+
+        # Re-render preview when canvas is resized
+        self._resize_after_id = None
+        self.qr_canvas.bind('<Configure>', self._on_canvas_resize)
 
     def generate_qr(self):
         text = self.text_input.get("1.0", tk.END).strip()
@@ -187,17 +203,8 @@ class QRGeneratorApp:
 
             self.current_qr_image = final_img
 
-            # Convert for display (resize to fit preview)
-            display_image = final_img.copy()
-            display_ratio = min(300 / final_img.width, 300 / final_img.height)
-            display_size = (int(final_img.width * display_ratio), int(final_img.height * display_ratio))
-            display_image = display_image.resize(display_size, Image.Resampling.LANCZOS)
-
-            self.photo = ImageTk.PhotoImage(display_image)
-
-            # Update canvas
-            self.qr_canvas.delete("all")
-            self.qr_canvas.create_image(150, 150, image=self.photo)
+            # Display the preview scaled to the canvas
+            self._update_preview()
 
             # Enable save and copy buttons
             self.save_btn.configure(state=tk.NORMAL)
@@ -209,6 +216,40 @@ class QRGeneratorApp:
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to generate QR code:\n{str(e)}")
+
+    def _update_preview(self):
+        if self.current_qr_image is None:
+            return
+
+        canvas_w = self.qr_canvas.winfo_width()
+        canvas_h = self.qr_canvas.winfo_height()
+
+        # Avoid degenerate sizes before the widget is mapped
+        if canvas_w < 10 or canvas_h < 10:
+            return
+
+        img = self.current_qr_image
+        ratio = min(canvas_w / img.width, canvas_h / img.height)
+
+        # Don't upscale beyond original size
+        if ratio > 1:
+            ratio = 1.0
+
+        display_w = int(img.width * ratio)
+        display_h = int(img.height * ratio)
+        display_image = img.resize((display_w, display_h), Image.Resampling.LANCZOS)
+
+        self.photo = ImageTk.PhotoImage(display_image)
+
+        self.qr_canvas.delete("all")
+        self.qr_canvas.configure(scrollregion=(0, 0, display_w, display_h))
+        self.qr_canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
+
+    def _on_canvas_resize(self, event):
+        # Debounce resize events
+        if self._resize_after_id is not None:
+            self.root.after_cancel(self._resize_after_id)
+        self._resize_after_id = self.root.after(100, self._update_preview)
 
     def save_qr(self):
         if self.current_qr_image is None:
