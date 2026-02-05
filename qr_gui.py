@@ -8,7 +8,7 @@ import win32clipboard
 import textwrap
 
 OUTPUT_DIR = "generatedQRs"
-LOGO_PATH = "sources/nosGolearon_logo_1000x250px.png"
+LOGO_PATH = "sources\Prysmian_Logo_CMYK_Positive.jpg"
 
 
 class QRGeneratorApp:
