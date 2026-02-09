@@ -12,6 +12,8 @@ from datetime import datetime
 
 OUTPUT_DIR = "generatedQRs"
 LOGO_PATH = "sources\Prysmian_Logo_CMYK_Positive.jpg"
+OUTPUT_DPI = 300
+CM_TO_PX = OUTPUT_DPI / 2.54  # ~118.11 pixels per cm
 
 
 class QRGeneratorApp:
@@ -147,9 +149,15 @@ class QRGeneratorApp:
         preview_label = ttk.Label(main_frame, text="Preview:")
         preview_label.pack(anchor=tk.W, pady=(20, 5))
 
+        # Grid container for preview + dimension inputs
+        preview_area = ttk.Frame(main_frame)
+        preview_area.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        preview_area.columnconfigure(0, weight=1)
+        preview_area.rowconfigure(0, weight=1)
+
         # Canvas for QR code display with border and scrollbars
-        self.canvas_frame = ttk.Frame(main_frame, relief="sunken", borderwidth=2)
-        self.canvas_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        self.canvas_frame = ttk.Frame(preview_area, relief="sunken", borderwidth=2)
+        self.canvas_frame.grid(row=0, column=0, sticky="nsew")
 
         self.qr_canvas = tk.Canvas(
             self.canvas_frame,
@@ -170,6 +178,26 @@ class QRGeneratorApp:
         canvas_hscroll.pack(side=tk.BOTTOM, fill=tk.X)
         canvas_vscroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.qr_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Height input - to the right of the preview
+        height_frame = ttk.Frame(preview_area)
+        height_frame.grid(row=0, column=1, sticky="n", padx=(10, 0))
+
+        ttk.Label(height_frame, text="Height:", font=("Segoe UI", 9)).pack(anchor=tk.W)
+        self.height_var = tk.StringVar(value="10")
+        height_entry = ttk.Entry(height_frame, textvariable=self.height_var, width=6)
+        height_entry.pack(anchor=tk.W, pady=(2, 0))
+        ttk.Label(height_frame, text="cm", font=("Segoe UI", 8)).pack(anchor=tk.W)
+
+        # Width input - below the preview
+        width_frame = ttk.Frame(preview_area)
+        width_frame.grid(row=1, column=0, sticky="w", pady=(5, 0))
+
+        ttk.Label(width_frame, text="Width:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        self.width_var = tk.StringVar(value="10")
+        width_entry = ttk.Entry(width_frame, textvariable=self.width_var, width=6)
+        width_entry.pack(side=tk.LEFT, padx=(5, 5))
+        ttk.Label(width_frame, text="cm", font=("Segoe UI", 8)).pack(side=tk.LEFT)
 
         # Status label
         self.status_var = tk.StringVar(value="Enter text and click 'Generate QR Code'")
@@ -349,6 +377,12 @@ class QRGeneratorApp:
             messagebox.showwarning("Warning", "No QR codes to export. Generate first.")
             return
 
+        try:
+            target_w, target_h = self._get_output_dimensions()
+        except ValueError as e:
+            messagebox.showerror("Error", str(e))
+            return
+
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         zip_filename = f"qr_export_{timestamp}.zip"
@@ -395,8 +429,9 @@ class QRGeneratorApp:
                             break
 
                         img = self._build_qr_image(text)
+                        img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
                         buf = io.BytesIO()
-                        img.save(buf, format="PNG")
+                        img.save(buf, format="PNG", dpi=(OUTPUT_DPI, OUTPUT_DPI))
                         entry_name = f"qr_{i + 1:04d}.png"
                         zf.writestr(entry_name, buf.getvalue())
 
@@ -465,6 +500,30 @@ class QRGeneratorApp:
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load file:\n{str(e)}")
 
+    def _get_output_dimensions(self):
+        """Parse and validate width/height cm inputs, return (width_px, height_px)."""
+        try:
+            width_cm = float(self.width_var.get())
+            height_cm = float(self.height_var.get())
+        except ValueError:
+            raise ValueError("Width and Height must be valid numbers.")
+
+        if width_cm <= 0 or height_cm <= 0:
+            raise ValueError("Width and Height must be positive values.")
+
+        target_w = max(1, int(width_cm * CM_TO_PX))
+        target_h = max(1, int(height_cm * CM_TO_PX))
+        return target_w, target_h
+
+    def _get_output_image(self, source_image=None):
+        """Resize image to the target dimensions specified in cm."""
+        img = source_image or self.current_qr_image
+        if img is None:
+            return None
+
+        target_w, target_h = self._get_output_dimensions()
+        return img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+
     def _update_preview(self):
         if self.current_qr_image is None:
             return
@@ -518,10 +577,13 @@ class QRGeneratorApp:
 
         if filepath:
             try:
+                output_image = self._get_output_image()
                 os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
-                self.current_qr_image.save(filepath)
+                output_image.save(filepath, dpi=(OUTPUT_DPI, OUTPUT_DPI))
                 self.status_var.set(f"Saved: {filepath}")
                 messagebox.showinfo("Success", f"QR code saved to:\n{filepath}")
+            except ValueError as e:
+                messagebox.showerror("Error", str(e))
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save:\n{str(e)}")
 
@@ -531,10 +593,12 @@ class QRGeneratorApp:
             return
 
         try:
+            output_image = self._get_output_image()
+
             # Convert image to BMP format for Windows clipboard
             output = io.BytesIO()
             # Convert to RGB if necessary and save as BMP
-            image = self.current_qr_image.convert("RGB")
+            image = output_image.convert("RGB")
             image.save(output, format="BMP")
             bmp_data = output.getvalue()[14:]  # Remove BMP file header
 
