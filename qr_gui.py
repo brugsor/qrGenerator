@@ -11,7 +11,7 @@ import threading
 from datetime import datetime
 
 OUTPUT_DIR = "generatedQRs"
-LOGO_PATH = "sources\Prysmian_Logo_CMYK_Positive.jpg"
+LOGO_PATH = "sources\Prysmian_Logo_CMYK_Black.png"
 OUTPUT_DPI = 300
 CM_TO_PX = OUTPUT_DPI / 2.54  # ~118.11 pixels per cm
 
