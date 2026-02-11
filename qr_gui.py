@@ -293,12 +293,15 @@ class QRGeneratorApp:
         else:
             return (canvas_width - element_width) // 2
 
-    def _build_qr_image(self, text):
-        """Build a QR code image for the given text and return it as a PIL Image."""
-        # Read design settings
-        qr_box_size = max(2, min(30, self.qr_size_var.get()))
-        logo_width = max(50, min(1000, self.logo_size_var.get()))
-        text_font_size = max(6, min(100, self.text_size_var.get()))
+    def _build_qr_image(self, text, scale=1.0):
+        """Build a QR code image for the given text and return it as a PIL Image.
+
+        scale: multiplier for all pixel dimensions (1.0 = base design settings).
+        """
+        # Read and clamp design settings, then apply scale for high-res output
+        qr_box_size = max(1, round(max(2, min(30, self.qr_size_var.get())) * scale))
+        logo_width = max(1, round(max(50, min(1000, self.logo_size_var.get())) * scale))
+        text_font_size = max(1, round(max(6, min(100, self.text_size_var.get())) * scale))
 
         font_map = {
             "Arial": "arial.ttf",
@@ -344,9 +347,9 @@ class QRGeneratorApp:
         text_height = text_bbox[3] - text_bbox[1]
         text_width = text_bbox[2] - text_bbox[0]
 
-        # Calculate final image dimensions
-        padding = 30
-        logo_padding = 20
+        # Calculate final image dimensions (scaled padding)
+        padding = max(1, round(30 * scale))
+        logo_padding = max(1, round(20 * scale))
         canvas_width = max(qr_size, text_width, logo_width) + (padding * 2)
         canvas_height = logo_height + logo_padding + qr_size + padding + text_height + (padding * 2)
 
@@ -516,12 +519,18 @@ class QRGeneratorApp:
 
         def export_thread():
             try:
+                # Precompute scale from first item so each export
+                # only requires a single high-res build (not two).
+                ref_img = self._build_qr_image(self.strings_list[0], scale=1.0)
+                ref_w, ref_h = ref_img.size
+                export_scale = max(1.0, max(target_w / ref_w, target_h / ref_h))
+
                 with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
                     for i, text in enumerate(self.strings_list):
                         if cancel_flag.is_set():
                             break
 
-                        img = self._build_qr_image(text)
+                        img = self._build_qr_image(text, scale=export_scale)
                         img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
                         buf = io.BytesIO()
                         img.save(buf, format="PNG", dpi=(OUTPUT_DPI, OUTPUT_DPI))
@@ -616,14 +625,38 @@ class QRGeneratorApp:
             target_h = max(1, int(height_val))
         return target_w, target_h
 
-    def _get_output_image(self, source_image=None):
-        """Resize image to the target dimensions specified by the user."""
-        img = source_image or self.current_qr_image
-        if img is None:
+    def _build_hires_image(self, text, target_w, target_h):
+        """Build image at high resolution matching target output dimensions.
+
+        Instead of upscaling a small image, this rebuilds the entire composition
+        with scaled elements (QR modules, logo, text, padding) so every element
+        is rendered natively at the target resolution.
+        """
+        # Build at reference scale to determine natural composition size
+        ref_img = self._build_qr_image(text, scale=1.0)
+        ref_w, ref_h = ref_img.size
+
+        # Scale so the rebuilt composition covers the target in both dimensions
+        scale = max(target_w / ref_w, target_h / ref_h)
+
+        if scale > 1.0:
+            # Rebuild at higher resolution for crisp output
+            output_img = self._build_qr_image(text, scale=scale)
+        else:
+            # Target is smaller — downscaling always preserves quality
+            output_img = ref_img
+
+        # Final resize to exact target dimensions (minimal adjustment)
+        return output_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+
+    def _get_output_image(self):
+        """Build high-resolution output image at the target dimensions."""
+        if not self.strings_list:
             return None
 
+        text = self.strings_list[self.current_index]
         target_w, target_h = self._get_output_dimensions()
-        return img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        return self._build_hires_image(text, target_w, target_h)
 
     def _update_preview(self):
         if self.current_qr_image is None:
