@@ -20,12 +20,22 @@ class QRGeneratorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("QR Code Generator")
-        self.root.geometry("600x800")
+        self.root.geometry("600x920")
         self.root.resizable(True, True)
 
         self.current_qr_image = None
         self.strings_list = []
         self.current_index = 0
+
+        # Design settings variables
+        self.logo_align_var = tk.StringVar(value="left")
+        self.qr_align_var = tk.StringVar(value="center")
+        self.text_align_var = tk.StringVar(value="center")
+        self.logo_size_var = tk.IntVar(value=250)
+        self.qr_size_var = tk.IntVar(value=10)
+        self.text_size_var = tk.IntVar(value=20)
+        self.font_var = tk.StringVar(value="Arial")
+
         self.setup_ui()
 
     def setup_ui(self):
@@ -145,6 +155,59 @@ class QRGeneratorApp:
         )
         self.next_btn.pack(side=tk.LEFT, padx=5)
 
+        # Design Settings section
+        design_frame = ttk.LabelFrame(main_frame, text="Design Settings", padding="10")
+        design_frame.pack(fill=tk.X, pady=(5, 5))
+
+        # Column headers
+        ttk.Label(design_frame, text="Align", font=("Segoe UI", 8, "bold")).grid(
+            row=0, column=1, columnspan=3, pady=(0, 2)
+        )
+        ttk.Label(design_frame, text="Size", font=("Segoe UI", 8, "bold")).grid(
+            row=0, column=4, columnspan=3, pady=(0, 2)
+        )
+
+        # Logo row
+        ttk.Label(design_frame, text="Logo:").grid(row=1, column=0, sticky=tk.W, padx=(0, 5))
+        for i, val in enumerate(("left", "center", "right")):
+            ttk.Radiobutton(
+                design_frame, text=val[0].upper(), variable=self.logo_align_var,
+                value=val, width=2
+            ).grid(row=1, column=1 + i, padx=1)
+        ttk.Label(design_frame, text="Width:").grid(row=1, column=4, padx=(10, 2))
+        ttk.Entry(design_frame, textvariable=self.logo_size_var, width=5).grid(row=1, column=5)
+        ttk.Label(design_frame, text="px").grid(row=1, column=6, sticky=tk.W)
+
+        # QR Code row
+        ttk.Label(design_frame, text="QR Code:").grid(row=2, column=0, sticky=tk.W, padx=(0, 5))
+        for i, val in enumerate(("left", "center", "right")):
+            ttk.Radiobutton(
+                design_frame, text=val[0].upper(), variable=self.qr_align_var,
+                value=val, width=2
+            ).grid(row=2, column=1 + i, padx=1)
+        ttk.Label(design_frame, text="Box size:").grid(row=2, column=4, padx=(10, 2))
+        ttk.Entry(design_frame, textvariable=self.qr_size_var, width=5).grid(row=2, column=5)
+
+        # Text row
+        ttk.Label(design_frame, text="Text:").grid(row=3, column=0, sticky=tk.W, padx=(0, 5))
+        for i, val in enumerate(("left", "center", "right")):
+            ttk.Radiobutton(
+                design_frame, text=val[0].upper(), variable=self.text_align_var,
+                value=val, width=2
+            ).grid(row=3, column=1 + i, padx=1)
+        ttk.Label(design_frame, text="Font size:").grid(row=3, column=4, padx=(10, 2))
+        ttk.Entry(design_frame, textvariable=self.text_size_var, width=5).grid(row=3, column=5)
+        ttk.Label(design_frame, text="pt").grid(row=3, column=6, sticky=tk.W)
+
+        # Font row
+        ttk.Label(design_frame, text="Font:").grid(row=4, column=0, sticky=tk.W, padx=(0, 5))
+        font_combo = ttk.Combobox(
+            design_frame, textvariable=self.font_var,
+            values=["Arial", "Times New Roman", "Verdana"],
+            state="readonly", width=18
+        )
+        font_combo.grid(row=4, column=1, columnspan=3, sticky=tk.W, pady=(3, 0))
+
         # QR Code preview section
         preview_label = ttk.Label(main_frame, text="Preview:")
         preview_label.pack(anchor=tk.W, pady=(20, 5))
@@ -215,12 +278,37 @@ class QRGeneratorApp:
         self._resize_after_id = None
         self.qr_canvas.bind('<Configure>', self._on_canvas_resize)
 
+    def _calc_x(self, align, canvas_width, element_width, padding):
+        """Calculate horizontal position based on alignment."""
+        if align == "left":
+            return padding
+        elif align == "right":
+            return canvas_width - element_width - padding
+        else:
+            return (canvas_width - element_width) // 2
+
     def _build_qr_image(self, text):
         """Build a QR code image for the given text and return it as a PIL Image."""
+        # Read design settings
+        qr_box_size = max(2, min(30, self.qr_size_var.get()))
+        logo_width = max(50, min(1000, self.logo_size_var.get()))
+        text_font_size = max(6, min(100, self.text_size_var.get()))
+
+        font_map = {
+            "Arial": "arial.ttf",
+            "Times New Roman": "times.ttf",
+            "Verdana": "verdana.ttf",
+        }
+        font_file = font_map.get(self.font_var.get(), "arial.ttf")
+
+        logo_align = self.logo_align_var.get()
+        qr_align = self.qr_align_var.get()
+        text_align = self.text_align_var.get()
+
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_M,
-            box_size=10,
+            box_size=qr_box_size,
             border=4,
         )
         qr.add_data(text)
@@ -231,18 +319,16 @@ class QRGeneratorApp:
 
         # Load and resize logo
         logo = Image.open(LOGO_PATH).convert("RGBA")
-        logo_width = 250
         logo_height = int(logo.height * (logo_width / logo.width))
         logo = logo.resize((logo_width, logo_height), Image.Resampling.LANCZOS)
 
         # Calculate text dimensions
         try:
-            font = ImageFont.truetype("arial.ttf", 20)
+            font = ImageFont.truetype(font_file, text_font_size)
         except:
             font = ImageFont.load_default()
 
         # Wrap text to fit within image width
-        max_text_width = max(qr_size, 400)
         wrapped_text = textwrap.fill(text, width=50)
 
         # Create temporary image to measure text
@@ -261,17 +347,18 @@ class QRGeneratorApp:
         # Create final canvas
         final_img = Image.new("RGB", (canvas_width, canvas_height), "white")
 
-        # Paste logo at top left
-        final_img.paste(logo, (padding, padding), logo)
+        # Paste logo with alignment
+        logo_x = self._calc_x(logo_align, canvas_width, logo_width, padding)
+        final_img.paste(logo, (logo_x, padding), logo)
 
-        # Calculate QR position (centered horizontally, below logo)
-        qr_x = (canvas_width - qr_size) // 2
+        # Calculate QR position with alignment
+        qr_x = self._calc_x(qr_align, canvas_width, qr_size, padding)
         qr_y = logo_height + logo_padding + padding
         final_img.paste(qr_img, (qr_x, qr_y))
 
-        # Add text below QR code
+        # Add text with alignment
         draw = ImageDraw.Draw(final_img)
-        text_x = (canvas_width - text_width) // 2
+        text_x = self._calc_x(text_align, canvas_width, text_width, padding)
         text_y = qr_y + qr_size + padding
         draw.text((text_x, text_y), wrapped_text, fill="black", font=font)
 
