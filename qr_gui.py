@@ -14,6 +14,7 @@ OUTPUT_DIR = "generatedQRs"
 LOGO_PATH = "sources\Prysmian_Logo_CMYK_Black.png"
 OUTPUT_DPI = 300
 CM_TO_PX = OUTPUT_DPI / 2.54  # ~118.11 pixels per cm
+IN_TO_PX = OUTPUT_DPI          # 300 pixels per inch
 
 
 class QRGeneratorApp:
@@ -35,6 +36,7 @@ class QRGeneratorApp:
         self.qr_size_var = tk.IntVar(value=10)
         self.text_size_var = tk.IntVar(value=20)
         self.font_var = tk.StringVar(value="Arial")
+        self.unit_var = tk.StringVar(value="cm")
 
         self.setup_ui()
 
@@ -250,7 +252,7 @@ class QRGeneratorApp:
         self.height_var = tk.StringVar(value="10")
         height_entry = ttk.Entry(height_frame, textvariable=self.height_var, width=6)
         height_entry.pack(anchor=tk.W, pady=(2, 0))
-        ttk.Label(height_frame, text="cm", font=("Segoe UI", 8)).pack(anchor=tk.W)
+        ttk.Label(height_frame, textvariable=self.unit_var, font=("Segoe UI", 8)).pack(anchor=tk.W)
 
         # Width input - below the preview
         width_frame = ttk.Frame(preview_area)
@@ -260,7 +262,11 @@ class QRGeneratorApp:
         self.width_var = tk.StringVar(value="10")
         width_entry = ttk.Entry(width_frame, textvariable=self.width_var, width=6)
         width_entry.pack(side=tk.LEFT, padx=(5, 5))
-        ttk.Label(width_frame, text="cm", font=("Segoe UI", 8)).pack(side=tk.LEFT)
+        unit_combo = ttk.Combobox(
+            width_frame, textvariable=self.unit_var,
+            values=["cm", "in", "px"], state="readonly", width=4
+        )
+        unit_combo.pack(side=tk.LEFT)
 
         # Status label
         self.status_var = tk.StringVar(value="Enter text and click 'Generate QR Code'")
@@ -588,22 +594,30 @@ class QRGeneratorApp:
                 messagebox.showerror("Error", f"Failed to load file:\n{str(e)}")
 
     def _get_output_dimensions(self):
-        """Parse and validate width/height cm inputs, return (width_px, height_px)."""
+        """Parse and validate width/height inputs, return (width_px, height_px)."""
         try:
-            width_cm = float(self.width_var.get())
-            height_cm = float(self.height_var.get())
+            width_val = float(self.width_var.get())
+            height_val = float(self.height_var.get())
         except ValueError:
             raise ValueError("Width and Height must be valid numbers.")
 
-        if width_cm <= 0 or height_cm <= 0:
+        if width_val <= 0 or height_val <= 0:
             raise ValueError("Width and Height must be positive values.")
 
-        target_w = max(1, int(width_cm * CM_TO_PX))
-        target_h = max(1, int(height_cm * CM_TO_PX))
+        unit = self.unit_var.get()
+        if unit == "cm":
+            target_w = max(1, int(width_val * CM_TO_PX))
+            target_h = max(1, int(height_val * CM_TO_PX))
+        elif unit == "in":
+            target_w = max(1, int(width_val * IN_TO_PX))
+            target_h = max(1, int(height_val * IN_TO_PX))
+        else:  # px
+            target_w = max(1, int(width_val))
+            target_h = max(1, int(height_val))
         return target_w, target_h
 
     def _get_output_image(self, source_image=None):
-        """Resize image to the target dimensions specified in cm."""
+        """Resize image to the target dimensions specified by the user."""
         img = source_image or self.current_qr_image
         if img is None:
             return None
