@@ -32,11 +32,11 @@ class QRGeneratorApp:
         self.logo_align_var = tk.StringVar(value="left")
         self.qr_align_var = tk.StringVar(value="center")
         self.text_align_var = tk.StringVar(value="center")
-        self.logo_size_var = tk.IntVar(value=250)
+        self.logo_size_var = tk.IntVar(value=400)
         self.qr_size_var = tk.IntVar(value=10)
-        self.text_size_var = tk.IntVar(value=20)
+        self.text_size_var = tk.IntVar(value=35)
         self.font_var = tk.StringVar(value="Arial")
-        self.unit_var = tk.StringVar(value="cm")
+        self.unit_var = tk.StringVar(value="in")
 
         self.setup_ui()
 
@@ -249,7 +249,7 @@ class QRGeneratorApp:
         height_frame.grid(row=0, column=1, sticky="n", padx=(10, 0))
 
         ttk.Label(height_frame, text="Height:", font=("Segoe UI", 9)).pack(anchor=tk.W)
-        self.height_var = tk.StringVar(value="10")
+        self.height_var = tk.StringVar(value="2")
         height_entry = ttk.Entry(height_frame, textvariable=self.height_var, width=6)
         height_entry.pack(anchor=tk.W, pady=(2, 0))
         ttk.Label(height_frame, textvariable=self.unit_var, font=("Segoe UI", 8)).pack(anchor=tk.W)
@@ -259,7 +259,7 @@ class QRGeneratorApp:
         width_frame.grid(row=1, column=0, sticky="w", pady=(5, 0))
 
         ttk.Label(width_frame, text="Width:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
-        self.width_var = tk.StringVar(value="10")
+        self.width_var = tk.StringVar(value="4")
         width_entry = ttk.Entry(width_frame, textvariable=self.width_var, width=6)
         width_entry.pack(side=tk.LEFT, padx=(5, 5))
         unit_combo = ttk.Combobox(
@@ -293,16 +293,13 @@ class QRGeneratorApp:
         else:
             return (canvas_width - element_width) // 2
 
-    def _build_qr_image(self, text, scale=1.0):
-        """Build a QR code image for the given text and return it as a PIL Image.
+    def _build_qr_image(self, text, target_w, target_h):
+        """Build a QR code image at exact target dimensions.
 
-        scale: multiplier for all pixel dimensions (1.0 = base design settings).
+        All elements (logo, QR, text, spacing) are sized proportionally to
+        the target canvas.  The QR code is always rendered as a perfect square.
         """
-        # Read and clamp design settings, then apply scale for high-res output
-        qr_box_size = max(1, round(max(2, min(30, self.qr_size_var.get())) * scale))
-        logo_width = max(1, round(max(50, min(1000, self.logo_size_var.get())) * scale))
-        text_font_size = max(1, round(max(6, min(100, self.text_size_var.get())) * scale))
-
+        # Font setup
         font_map = {
             "Arial": "arial.ttf",
             "Times New Roman": "times.ttf",
@@ -314,61 +311,91 @@ class QRGeneratorApp:
         qr_align = self.qr_align_var.get()
         text_align = self.text_align_var.get()
 
+        # Proportional scale (defaults calibrated for 1200x600 = 4"x2" @300 DPI)
+        scale = min(target_w / 1200, target_h / 600)
+
+        # Spacing
+        padding = max(1, round(25 * scale))
+        gap = max(1, round(15 * scale))
+        content_w = target_w - 2 * padding
+
+        # --- Logo ---
+        logo = Image.open(LOGO_PATH).convert("RGBA")
+        logo_aspect = logo.width / logo.height
+        user_logo_w = max(50, min(1000, self.logo_size_var.get()))
+        logo_width = max(1, round(user_logo_w * scale))
+        if logo_width > content_w:
+            logo_width = content_w
+        logo_height = max(1, round(logo_width / logo_aspect))
+        logo = logo.resize((logo_width, logo_height), Image.Resampling.LANCZOS)
+
+        # --- Text ---
+        user_text_size = max(6, min(100, self.text_size_var.get()))
+        text_font_size = max(6, round(user_text_size * scale))
+
+        try:
+            font = ImageFont.truetype(font_file, text_font_size)
+        except Exception:
+            font = ImageFont.load_default()
+
+        avg_char_w = text_font_size * 0.6
+        wrap_width = max(10, int(content_w / max(1, avg_char_w)))
+        wrapped_text = textwrap.fill(text, width=wrap_width)
+
+        temp_img = Image.new("RGB", (1, 1))
+        temp_draw = ImageDraw.Draw(temp_img)
+        text_bbox = temp_draw.textbbox((0, 0), wrapped_text, font=font)
+        text_h = text_bbox[3] - text_bbox[1]
+        text_w = text_bbox[2] - text_bbox[0]
+
+        # --- QR code (always square) ---
+        used_h = padding + logo_height + gap + gap + text_h + padding
+        qr_max_h = max(1, target_h - used_h)
+        qr_size = max(1, min(qr_max_h, content_w))
+
+        # Generate QR: first pass to determine module count
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_M,
-            box_size=qr_box_size,
+            box_size=1,
             border=4,
         )
         qr.add_data(text)
         qr.make(fit=True)
+        total_modules = qr.modules_count + 2 * qr.border
 
-        qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-        qr_size = qr_img.size[0]
+        # Regenerate at optimal box_size for the target QR pixel size
+        box_size = max(1, qr_size // total_modules)
+        qr_final = qrcode.QRCode(
+            version=qr.version,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=box_size,
+            border=4,
+        )
+        qr_final.add_data(text)
+        qr_final.make(fit=True)
+        qr_img = qr_final.make_image(fill_color="black", back_color="white").convert("RGB")
 
-        # Load and resize logo
-        logo = Image.open(LOGO_PATH).convert("RGBA")
-        logo_height = int(logo.height * (logo_width / logo.width))
-        logo = logo.resize((logo_width, logo_height), Image.Resampling.LANCZOS)
+        # Resize to exact square target (NEAREST keeps module edges sharp)
+        if qr_img.size[0] != qr_size:
+            qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.NEAREST)
 
-        # Calculate text dimensions
-        try:
-            font = ImageFont.truetype(font_file, text_font_size)
-        except:
-            font = ImageFont.load_default()
+        # --- Compose final image at exact target dimensions ---
+        final_img = Image.new("RGB", (target_w, target_h), "white")
 
-        # Wrap text to fit within image width
-        wrapped_text = textwrap.fill(text, width=50)
-
-        # Create temporary image to measure text
-        temp_img = Image.new("RGB", (1, 1))
-        temp_draw = ImageDraw.Draw(temp_img)
-        text_bbox = temp_draw.textbbox((0, 0), wrapped_text, font=font)
-        text_height = text_bbox[3] - text_bbox[1]
-        text_width = text_bbox[2] - text_bbox[0]
-
-        # Calculate final image dimensions (scaled padding)
-        padding = max(1, round(30 * scale))
-        logo_padding = max(1, round(20 * scale))
-        canvas_width = max(qr_size, text_width, logo_width) + (padding * 2)
-        canvas_height = logo_height + logo_padding + qr_size + padding + text_height + (padding * 2)
-
-        # Create final canvas
-        final_img = Image.new("RGB", (canvas_width, canvas_height), "white")
-
-        # Paste logo with alignment
-        logo_x = self._calc_x(logo_align, canvas_width, logo_width, padding)
+        # Logo at top
+        logo_x = self._calc_x(logo_align, target_w, logo_width, padding)
         final_img.paste(logo, (logo_x, padding), logo)
 
-        # Calculate QR position with alignment
-        qr_x = self._calc_x(qr_align, canvas_width, qr_size, padding)
-        qr_y = logo_height + logo_padding + padding
+        # QR code below logo (square)
+        qr_x = self._calc_x(qr_align, target_w, qr_size, padding)
+        qr_y = padding + logo_height + gap
         final_img.paste(qr_img, (qr_x, qr_y))
 
-        # Add text with alignment
+        # Text below QR
         draw = ImageDraw.Draw(final_img)
-        text_x = self._calc_x(text_align, canvas_width, text_width, padding)
-        text_y = qr_y + qr_size + padding
+        text_x = self._calc_x(text_align, target_w, text_w, padding)
+        text_y = qr_y + qr_size + gap
         draw.text((text_x, text_y), wrapped_text, fill="black", font=font)
 
         return final_img
@@ -390,11 +417,17 @@ class QRGeneratorApp:
             )
             return
 
+        try:
+            target_w, target_h = self._get_output_dimensions()
+        except ValueError as e:
+            messagebox.showerror("Error", str(e))
+            return
+
         self.strings_list = lines
         self.current_index = 0
 
         try:
-            self.current_qr_image = self._build_qr_image(self.strings_list[0])
+            self.current_qr_image = self._build_qr_image(self.strings_list[0], target_w, target_h)
             self._update_preview()
 
             # Enable save and copy buttons
@@ -438,8 +471,9 @@ class QRGeneratorApp:
         if self.current_index > 0:
             self.current_index -= 1
             try:
+                target_w, target_h = self._get_output_dimensions()
                 self.current_qr_image = self._build_qr_image(
-                    self.strings_list[self.current_index]
+                    self.strings_list[self.current_index], target_w, target_h
                 )
                 self._update_preview()
                 self._update_nav_state()
@@ -455,8 +489,9 @@ class QRGeneratorApp:
         if self.current_index < len(self.strings_list) - 1:
             self.current_index += 1
             try:
+                target_w, target_h = self._get_output_dimensions()
                 self.current_qr_image = self._build_qr_image(
-                    self.strings_list[self.current_index]
+                    self.strings_list[self.current_index], target_w, target_h
                 )
                 self._update_preview()
                 self._update_nav_state()
@@ -519,19 +554,12 @@ class QRGeneratorApp:
 
         def export_thread():
             try:
-                # Precompute scale from first item so each export
-                # only requires a single high-res build (not two).
-                ref_img = self._build_qr_image(self.strings_list[0], scale=1.0)
-                ref_w, ref_h = ref_img.size
-                export_scale = max(1.0, max(target_w / ref_w, target_h / ref_h))
-
                 with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
                     for i, text in enumerate(self.strings_list):
                         if cancel_flag.is_set():
                             break
 
-                        img = self._build_qr_image(text, scale=export_scale)
-                        img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                        img = self._build_qr_image(text, target_w, target_h)
                         buf = io.BytesIO()
                         img.save(buf, format="PNG", dpi=(OUTPUT_DPI, OUTPUT_DPI))
                         entry_name = f"qr_{i + 1:04d}.png"
@@ -625,38 +653,14 @@ class QRGeneratorApp:
             target_h = max(1, int(height_val))
         return target_w, target_h
 
-    def _build_hires_image(self, text, target_w, target_h):
-        """Build image at high resolution matching target output dimensions.
-
-        Instead of upscaling a small image, this rebuilds the entire composition
-        with scaled elements (QR modules, logo, text, padding) so every element
-        is rendered natively at the target resolution.
-        """
-        # Build at reference scale to determine natural composition size
-        ref_img = self._build_qr_image(text, scale=1.0)
-        ref_w, ref_h = ref_img.size
-
-        # Scale so the rebuilt composition covers the target in both dimensions
-        scale = max(target_w / ref_w, target_h / ref_h)
-
-        if scale > 1.0:
-            # Rebuild at higher resolution for crisp output
-            output_img = self._build_qr_image(text, scale=scale)
-        else:
-            # Target is smaller — downscaling always preserves quality
-            output_img = ref_img
-
-        # Final resize to exact target dimensions (minimal adjustment)
-        return output_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-
     def _get_output_image(self):
-        """Build high-resolution output image at the target dimensions."""
+        """Build output image at the target dimensions."""
         if not self.strings_list:
             return None
 
         text = self.strings_list[self.current_index]
         target_w, target_h = self._get_output_dimensions()
-        return self._build_hires_image(text, target_w, target_h)
+        return self._build_qr_image(text, target_w, target_h)
 
     def _update_preview(self):
         if self.current_qr_image is None:
