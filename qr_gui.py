@@ -11,7 +11,7 @@ import threading
 from datetime import datetime
 
 OUTPUT_DIR = "generatedQRs"
-LOGO_PATH = "sources\Prysmian_Logo_CMYK_Black.png"
+DEFAULT_LOGO_PATH = r"sources\Prysmian_Logo_CMYK_Black.png"
 OUTPUT_DPI = 300
 CM_TO_PX = OUTPUT_DPI / 2.54  # ~118.11 pixels per cm
 IN_TO_PX = OUTPUT_DPI          # 300 pixels per inch
@@ -21,12 +21,15 @@ class QRGeneratorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("QR Code Generator")
-        self.root.geometry("600x920")
+        self.root.geometry("600x960")
         self.root.resizable(True, True)
 
         self.current_qr_image = None
         self.strings_list = []
         self.current_index = 0
+
+        # Logo path variable (starts with default, can be changed by user)
+        self.custom_logo_path = None
 
         # Design settings variables
         self.logo_align_var = tk.StringVar(value="left")
@@ -38,27 +41,264 @@ class QRGeneratorApp:
         self.font_var = tk.StringVar(value="Arial")
         self.unit_var = tk.StringVar(value="in")
 
+        self._configure_styles()
         self.setup_ui()
+
+    def _configure_styles(self):
+        """Configure modern ttk styles with a cohesive color palette."""
+        style = ttk.Style()
+        style.theme_use("clam")
+
+        # Modern color palette
+        # Primary: Deep blue for main actions
+        # Secondary: Slate gray for secondary actions
+        # Accent: Warm orange for highlights
+        # Background: Light gray tones
+        PRIMARY_COLOR = "#2563EB"      # Blue 600
+        PRIMARY_HOVER = "#1E40AF"      # Blue 700
+        PRIMARY_PRESSED = "#1E3A8A"    # Blue 800
+        SECONDARY_COLOR = "#64748B"    # Slate 500
+        SECONDARY_HOVER = "#475569"    # Slate 600
+        SECONDARY_PRESSED = "#334155"  # Slate 700
+        ACCENT_COLOR = "#F97316"       # Orange 500
+        ACCENT_HOVER = "#EA580C"       # Orange 600
+        ACCENT_PRESSED = "#C2410C"     # Orange 700
+        BG_COLOR = "#F8FAFC"           # Slate 50
+        FRAME_BG = "#FFFFFF"           # White
+        BORDER_COLOR = "#E2E8F0"       # Slate 200
+        TEXT_COLOR = "#1E293B"         # Slate 800
+        TEXT_DISABLED = "#94A3B8"      # Slate 400
+
+        # Configure root window background
+        self.root.configure(bg=BG_COLOR)
+
+        # Primary button style (for main actions like Generate)
+        style.configure(
+            "Primary.TButton",
+            background=PRIMARY_COLOR,
+            foreground="white",
+            borderwidth=0,
+            focuscolor="none",
+            font=("Segoe UI", 9, "bold"),
+            padding=(12, 6),
+            relief="flat"
+        )
+        style.map(
+            "Primary.TButton",
+            background=[
+                ("disabled", "#CBD5E1"),  # Slate 300
+                ("pressed", PRIMARY_PRESSED),
+                ("active", PRIMARY_HOVER)
+            ],
+            foreground=[
+                ("disabled", TEXT_DISABLED),
+                ("pressed", "white"),
+                ("active", "white"),
+                ("!disabled", "white")
+            ]
+        )
+
+        # Accent button style (for special actions like Save)
+        style.configure(
+            "Accent.TButton",
+            background=ACCENT_COLOR,
+            foreground="white",
+            borderwidth=0,
+            focuscolor="none",
+            font=("Segoe UI", 9, "bold"),
+            padding=(12, 6),
+            relief="flat"
+        )
+        style.map(
+            "Accent.TButton",
+            background=[
+                ("disabled", "#CBD5E1"),  # Slate 300
+                ("pressed", ACCENT_PRESSED),
+                ("active", ACCENT_HOVER)
+            ],
+            foreground=[
+                ("disabled", TEXT_DISABLED),
+                ("pressed", "white"),
+                ("active", "white"),
+                ("!disabled", "white")
+            ]
+        )
+
+        # Secondary button style (for less prominent actions)
+        style.configure(
+            "Secondary.TButton",
+            background=SECONDARY_COLOR,
+            foreground="white",
+            borderwidth=0,
+            focuscolor="none",
+            font=("Segoe UI", 9),
+            padding=(10, 5),
+            relief="flat"
+        )
+        style.map(
+            "Secondary.TButton",
+            background=[
+                ("disabled", "#CBD5E1"),  # Slate 300
+                ("pressed", SECONDARY_PRESSED),
+                ("active", SECONDARY_HOVER)
+            ],
+            foreground=[
+                ("disabled", TEXT_DISABLED),
+                ("pressed", "white"),
+                ("active", "white"),
+                ("!disabled", "white")
+            ]
+        )
+
+        # Outline button style (for tertiary actions)
+        style.configure(
+            "Outline.TButton",
+            background=FRAME_BG,
+            foreground=TEXT_COLOR,
+            borderwidth=1,
+            bordercolor=BORDER_COLOR,
+            focuscolor="none",
+            font=("Segoe UI", 9),
+            padding=(10, 5),
+            relief="solid"
+        )
+        style.map(
+            "Outline.TButton",
+            background=[
+                ("disabled", "#F1F5F9"),  # Slate 100
+                ("pressed", "#E2E8F0"),   # Slate 200
+                ("active", BG_COLOR)
+            ],
+            foreground=[
+                ("disabled", TEXT_DISABLED),
+                ("pressed", TEXT_COLOR),
+                ("active", TEXT_COLOR),
+                ("!disabled", TEXT_COLOR)
+            ],
+            bordercolor=[
+                ("disabled", "#CBD5E1"),  # Slate 300
+                ("active", BORDER_COLOR)
+            ]
+        )
+
+        # Frame styles
+        style.configure("TFrame", background=FRAME_BG)
+        style.configure("Card.TFrame", background=FRAME_BG, relief="flat", borderwidth=1)
+
+        # LabelFrame style
+        style.configure(
+            "TLabelframe",
+            background=FRAME_BG,
+            borderwidth=1,
+            relief="solid",
+            bordercolor=BORDER_COLOR
+        )
+        style.configure(
+            "TLabelframe.Label",
+            background=FRAME_BG,
+            foreground=TEXT_COLOR,
+            font=("Segoe UI", 9, "bold")
+        )
+
+        # Label styles
+        style.configure("TLabel", background=FRAME_BG, foreground=TEXT_COLOR, font=("Segoe UI", 9))
+        style.configure(
+            "Title.TLabel",
+            background=FRAME_BG,
+            foreground=TEXT_COLOR,
+            font=("Segoe UI", 18, "bold")
+        )
+
+        # Entry style
+        style.configure(
+            "TEntry",
+            fieldbackground="white",
+            foreground=TEXT_COLOR,
+            borderwidth=1,
+            bordercolor=BORDER_COLOR,
+            insertcolor=PRIMARY_COLOR,
+            relief="solid"
+        )
+        style.map(
+            "TEntry",
+            fieldbackground=[("disabled", "#F1F5F9")],
+            foreground=[("disabled", TEXT_DISABLED)],
+            bordercolor=[
+                ("focus", PRIMARY_COLOR),
+                ("!focus", BORDER_COLOR)
+            ]
+        )
+
+        # Combobox style
+        style.configure(
+            "TCombobox",
+            fieldbackground="white",
+            background="white",
+            foreground=TEXT_COLOR,
+            borderwidth=1,
+            bordercolor=BORDER_COLOR,
+            arrowcolor=TEXT_COLOR,
+            relief="solid"
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[
+                ("readonly", "white"),
+                ("disabled", "#F1F5F9")
+            ],
+            foreground=[("disabled", TEXT_DISABLED)],
+            bordercolor=[
+                ("focus", PRIMARY_COLOR),
+                ("!focus", BORDER_COLOR)
+            ],
+            arrowcolor=[("disabled", TEXT_DISABLED)]
+        )
+
+        # Radiobutton style
+        style.configure(
+            "TRadiobutton",
+            background=FRAME_BG,
+            foreground=TEXT_COLOR,
+            font=("Segoe UI", 9)
+        )
+        style.map(
+            "TRadiobutton",
+            background=[("active", FRAME_BG)],
+            foreground=[("disabled", TEXT_DISABLED)]
+        )
+
+        # Progressbar style
+        style.configure(
+            "TProgressbar",
+            background=PRIMARY_COLOR,
+            troughcolor=BORDER_COLOR,
+            borderwidth=0,
+            relief="flat"
+        )
 
     def setup_ui(self):
         # Main frame with padding
-        main_frame = ttk.Frame(self.root, padding="20")
+        main_frame = ttk.Frame(self.root, padding="20", style="TFrame")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Title label
         title_label = ttk.Label(
             main_frame,
             text="QR Code Generator",
-            font=("Segoe UI", 18, "bold")
+            style="Title.TLabel"
         )
         title_label.pack(pady=(0, 20))
 
         # Input section
-        input_label = ttk.Label(main_frame, text="Enter text to encode (one per line for batch):")
+        input_label = ttk.Label(
+            main_frame,
+            text="Enter text to encode (one per line for batch):",
+            style="TLabel"
+        )
         input_label.pack(anchor=tk.W)
 
         # Text input with scrollbar
-        text_frame = ttk.Frame(main_frame)
+        text_frame = ttk.Frame(main_frame, style="TFrame")
         text_frame.pack(fill=tk.X, pady=(5, 15))
 
         self.text_input = tk.Text(
@@ -66,7 +306,12 @@ class QRGeneratorApp:
             height=5,
             width=50,
             font=("Consolas", 11),
-            wrap=tk.WORD
+            wrap=tk.WORD,
+            bg="white",
+            fg="#1E293B",
+            relief="solid",
+            borderwidth=1,
+            insertbackground="#2563EB"
         )
         scrollbar = ttk.Scrollbar(text_frame, command=self.text_input.yview)
         self.text_input.configure(yscrollcommand=scrollbar.set)
@@ -75,13 +320,14 @@ class QRGeneratorApp:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         # Buttons frame
-        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame = ttk.Frame(main_frame, style="TFrame")
         buttons_frame.pack(pady=10)
 
         self.generate_btn = ttk.Button(
             buttons_frame,
             text="Generate QR Code",
-            command=self.generate_qr
+            command=self.generate_qr,
+            style="Primary.TButton"
         )
         self.generate_btn.pack(side=tk.LEFT, padx=5)
 
@@ -89,7 +335,8 @@ class QRGeneratorApp:
             buttons_frame,
             text="Save QR Code",
             command=self.save_qr,
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style="Accent.TButton"
         )
         self.save_btn.pack(side=tk.LEFT, padx=5)
 
@@ -97,25 +344,28 @@ class QRGeneratorApp:
             buttons_frame,
             text="Copy to Clipboard",
             command=self.copy_to_clipboard,
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style="Secondary.TButton"
         )
         self.copy_btn.pack(side=tk.LEFT, padx=5)
 
         self.clear_btn = ttk.Button(
             buttons_frame,
             text="Clear",
-            command=self.clear_all
+            command=self.clear_all,
+            style="Outline.TButton"
         )
         self.clear_btn.pack(side=tk.LEFT, padx=5)
 
         # Second row of buttons
-        buttons_frame2 = ttk.Frame(main_frame)
+        buttons_frame2 = ttk.Frame(main_frame, style="TFrame")
         buttons_frame2.pack(pady=(0, 10))
 
         self.load_file_btn = ttk.Button(
             buttons_frame2,
             text="Load from File",
-            command=self._load_from_file
+            command=self._load_from_file,
+            style="Secondary.TButton"
         )
         self.load_file_btn.pack(side=tk.LEFT, padx=5)
 
@@ -123,12 +373,46 @@ class QRGeneratorApp:
             buttons_frame2,
             text="Export All as ZIP",
             command=self._export_all_zip,
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style="Secondary.TButton"
         )
         self.export_zip_btn.pack(side=tk.LEFT, padx=5)
 
+        # Logo upload section
+        logo_frame = ttk.LabelFrame(main_frame, text="Logo Settings", padding="10", style="TLabelframe")
+        logo_frame.pack(fill=tk.X, pady=(5, 5))
+
+        logo_controls = ttk.Frame(logo_frame, style="TFrame")
+        logo_controls.pack(fill=tk.X)
+
+        self.logo_upload_btn = ttk.Button(
+            logo_controls,
+            text="Upload Custom Logo",
+            command=self._upload_logo,
+            style="Secondary.TButton"
+        )
+        self.logo_upload_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.logo_reset_btn = ttk.Button(
+            logo_controls,
+            text="Reset to Default",
+            command=self._reset_logo,
+            style="Outline.TButton",
+            state=tk.DISABLED
+        )
+        self.logo_reset_btn.pack(side=tk.LEFT, padx=5)
+
+        self.logo_status_var = tk.StringVar(value="Using default logo")
+        logo_status_label = ttk.Label(
+            logo_controls,
+            textvariable=self.logo_status_var,
+            font=("Segoe UI", 8),
+            foreground="#64748B"
+        )
+        logo_status_label.pack(side=tk.LEFT, padx=10)
+
         # Navigation bar
-        nav_frame = ttk.Frame(main_frame)
+        nav_frame = ttk.Frame(main_frame, style="TFrame")
         nav_frame.pack(pady=(0, 5))
 
         self.prev_btn = ttk.Button(
@@ -158,7 +442,7 @@ class QRGeneratorApp:
         self.next_btn.pack(side=tk.LEFT, padx=5)
 
         # Design Settings section
-        design_frame = ttk.LabelFrame(main_frame, text="Design Settings", padding="10")
+        design_frame = ttk.LabelFrame(main_frame, text="Design Settings", padding="10", style="TLabelframe")
         design_frame.pack(fill=tk.X, pady=(5, 5))
 
         # Column headers
@@ -211,17 +495,17 @@ class QRGeneratorApp:
         font_combo.grid(row=4, column=1, columnspan=3, sticky=tk.W, pady=(3, 0))
 
         # QR Code preview section
-        preview_label = ttk.Label(main_frame, text="Preview:")
+        preview_label = ttk.Label(main_frame, text="Preview:", style="TLabel")
         preview_label.pack(anchor=tk.W, pady=(20, 5))
 
         # Grid container for preview + dimension inputs
-        preview_area = ttk.Frame(main_frame)
+        preview_area = ttk.Frame(main_frame, style="TFrame")
         preview_area.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
         preview_area.columnconfigure(0, weight=1)
         preview_area.rowconfigure(0, weight=1)
 
         # Canvas for QR code display with border and scrollbars
-        self.canvas_frame = ttk.Frame(preview_area, relief="sunken", borderwidth=2)
+        self.canvas_frame = ttk.Frame(preview_area, relief="solid", borderwidth=1)
         self.canvas_frame.grid(row=0, column=0, sticky="nsew")
 
         self.qr_canvas = tk.Canvas(
@@ -245,26 +529,26 @@ class QRGeneratorApp:
         self.qr_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Height input - to the right of the preview
-        height_frame = ttk.Frame(preview_area)
+        height_frame = ttk.Frame(preview_area, style="TFrame")
         height_frame.grid(row=0, column=1, sticky="n", padx=(10, 0))
 
-        ttk.Label(height_frame, text="Height:", font=("Segoe UI", 9)).pack(anchor=tk.W)
+        ttk.Label(height_frame, text="Height:", font=("Segoe UI", 9), style="TLabel").pack(anchor=tk.W)
         self.height_var = tk.StringVar(value="2")
-        height_entry = ttk.Entry(height_frame, textvariable=self.height_var, width=6)
+        height_entry = ttk.Entry(height_frame, textvariable=self.height_var, width=6, style="TEntry")
         height_entry.pack(anchor=tk.W, pady=(2, 0))
-        ttk.Label(height_frame, textvariable=self.unit_var, font=("Segoe UI", 8)).pack(anchor=tk.W)
+        ttk.Label(height_frame, textvariable=self.unit_var, font=("Segoe UI", 8), style="TLabel").pack(anchor=tk.W)
 
         # Width input - below the preview
-        width_frame = ttk.Frame(preview_area)
+        width_frame = ttk.Frame(preview_area, style="TFrame")
         width_frame.grid(row=1, column=0, sticky="w", pady=(5, 0))
 
-        ttk.Label(width_frame, text="Width:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttk.Label(width_frame, text="Width:", font=("Segoe UI", 9), style="TLabel").pack(side=tk.LEFT)
         self.width_var = tk.StringVar(value="4")
-        width_entry = ttk.Entry(width_frame, textvariable=self.width_var, width=6)
+        width_entry = ttk.Entry(width_frame, textvariable=self.width_var, width=6, style="TEntry")
         width_entry.pack(side=tk.LEFT, padx=(5, 5))
         unit_combo = ttk.Combobox(
             width_frame, textvariable=self.unit_var,
-            values=["cm", "in", "px"], state="readonly", width=4
+            values=["cm", "in", "px"], state="readonly", width=4, style="TCombobox"
         )
         unit_combo.pack(side=tk.LEFT)
 
@@ -273,7 +557,8 @@ class QRGeneratorApp:
         self.status_label = ttk.Label(
             main_frame,
             textvariable=self.status_var,
-            font=("Segoe UI", 9)
+            font=("Segoe UI", 9),
+            style="TLabel"
         )
         self.status_label.pack(pady=(5, 0))
 
@@ -283,6 +568,46 @@ class QRGeneratorApp:
         # Re-render preview when canvas is resized
         self._resize_after_id = None
         self.qr_canvas.bind('<Configure>', self._on_canvas_resize)
+
+    def _upload_logo(self):
+        """Allow user to select a custom logo file."""
+        filepath = filedialog.askopenfilename(
+            title="Select Logo Image",
+            filetypes=[
+                ("Image files", "*.png *.jpg *.jpeg *.bmp *.gif"),
+                ("PNG files", "*.png"),
+                ("JPEG files", "*.jpg *.jpeg"),
+                ("All files", "*.*")
+            ]
+        )
+        if filepath:
+            # Validate that it's a readable image
+            try:
+                test_img = Image.open(filepath)
+                test_img.close()
+                self.custom_logo_path = filepath
+                filename = os.path.basename(filepath)
+                self.logo_status_var.set(f"Using: {filename}")
+                self.logo_reset_btn.configure(state=tk.NORMAL)
+                self.status_var.set(f"Custom logo loaded: {filename}")
+            except Exception as e:
+                messagebox.showerror(
+                    "Invalid Logo",
+                    f"Failed to load image:\n{str(e)}\n\nPlease select a valid image file."
+                )
+
+    def _reset_logo(self):
+        """Reset to the default logo."""
+        self.custom_logo_path = None
+        self.logo_status_var.set("Using default logo")
+        self.logo_reset_btn.configure(state=tk.DISABLED)
+        self.status_var.set("Reset to default logo")
+
+    def _get_logo_path(self):
+        """Return the active logo path (custom or default)."""
+        if self.custom_logo_path and os.path.exists(self.custom_logo_path):
+            return self.custom_logo_path
+        return DEFAULT_LOGO_PATH
 
     def _calc_x(self, align, canvas_width, element_width, padding):
         """Calculate horizontal position based on alignment."""
@@ -320,7 +645,8 @@ class QRGeneratorApp:
         content_w = target_w - 2 * padding
 
         # --- Logo ---
-        logo = Image.open(LOGO_PATH).convert("RGBA")
+        logo_path = self._get_logo_path()
+        logo = Image.open(logo_path).convert("RGBA")
         logo_aspect = logo.width / logo.height
         user_logo_w = max(50, min(1000, self.logo_size_var.get()))
         logo_width = max(1, round(user_logo_w * scale))
