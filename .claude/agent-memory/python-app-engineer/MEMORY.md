@@ -1,30 +1,39 @@
 # QR Generator Project Memory
 
-## Project Structure
-- **qr_gui.py**: Single-class tkinter app (QRGeneratorApp) with Windows-only clipboard support
-- **qrGenerator.py**: CLI tool for basic QR code generation
-- Default logo path: `sources\Prysmian_Logo_CMYK_Black.png`
-- Output directory: `generatedQRs/`
+## Project Structure (Modular Architecture)
+- **Entry points**: `qr_gui.py` (GUI), `qrGenerator.py` (CLI) - thin wrappers
+- **Core package**: `src/` with clean separation of concerns
+  - `src/config.py`: All constants and configuration values
+  - `src/core/`: Business logic (QRImageBuilder, file operations)
+  - `src/ui/`: UI-specific code (app class, TTK styling)
+  - `src/utils/`: Cross-cutting utilities (clipboard, dimension conversion)
+- Default logo: `sources\Prysmian_Logo_CMYK_Black.png`
+- Output: `generatedQRs/` (GUI), `sources/` (CLI)
 
 ## Key Architecture Patterns
-- All rendering happens in `_build_qr_image(text, target_w, target_h)` which returns PIL Image
-- Proportional scaling based on 1200x600 baseline (4"x2" at 300 DPI)
-- User settings stored in tk.StringVar and tk.IntVar for reactivity
-- Custom logo path stored in `self.custom_logo_path` (None = use default)
+- **QRImageBuilder** (`src/core/qr_builder.py`): Core business logic
+  - Constructor accepts all design parameters
+  - `build_image(text, width, height)` returns PIL Image
+  - Proportional scaling based on 1200x600 baseline (4"x2" @ 300 DPI)
+- **File operations** (`src/core/file_ops.py`): save_qr_image(), export_qr_codes_to_zip()
+- **Dimension conversion** (`src/utils/dimensions.py`): convert_to_pixels(w, h, unit)
+- **Clipboard** (`src/utils/clipboard.py`): Windows-only, isolated
+- **UI styling** (`src/ui/styles.py`): configure_styles() - all TTK styling
+- **App class** (`src/ui/app.py`): UI logic only, delegates to core modules
 
-## UI Styling
-- Modern color palette applied via ttk.Style configuration
-- Button hierarchy: Primary (blue) > Accent (orange) > Secondary (slate) > Outline
-- Background colors: Root (#F8FAFC), Frames (#FFFFFF)
-- Custom styles: Primary.TButton, Accent.TButton, Secondary.TButton, Outline.TButton, Title.TLabel
+## Code Quality Standards
+- Type hints on all function signatures
+- Docstrings (Google style) for all public functions/classes
+- Import order: stdlib, third-party, local (PEP 8)
+- pathlib.Path for all file operations (not os.path)
+- Functions under 30 lines where possible
+- Specific exception types in error handling
+
+## UI Implementation
+- TTK styling: Primary (blue), Accent (orange), Secondary (slate), Outline buttons
+- User settings in tk variables for reactivity
+- Custom logo path with fallback to default
 
 ## Windows-Specific
-- Uses win32clipboard for BMP clipboard operations
-- Requires pywin32 package
-- Path strings with backslashes must use raw strings (r"path\to\file")
-
-## Logo Upload Feature
-- Custom logo path stored in instance variable, falls back to default
-- `_get_logo_path()` helper returns active logo path
-- Logo status displayed in UI with reset button
-- Logo upload validates image is readable before accepting
+- Clipboard requires pywin32 (win32clipboard for BMP format)
+- Always activate venv: `source venv/Scripts/activate`
